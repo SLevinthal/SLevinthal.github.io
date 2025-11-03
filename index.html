@@ -24,7 +24,7 @@
   <p>Some snippets of code from a Kernel Shell made for my class Intro to Computer Systems and Networking</p>
   <pre><code class="language-c">
   
-  int main(int argc, char **argv) 
+int main(int argc, char **argv) 
 {
     char c;
     char cmdline[MAXLINE];
@@ -51,27 +51,6 @@
 	}
     }
 
-    /* Install the signal handlers */
-
-    /* These are the ones you will need to implement */
-    Signal(SIGINT,  sigint_handler);   /* ctrl-c */
-    Signal(SIGTSTP, sigtstp_handler);  /* ctrl-z */
-    Signal(SIGCHLD, sigchld_handler);  /* Terminated or stopped child */
-
-    /* Ignoring these signals simplifies reading from stdin/stdout */
-    Signal(SIGTTIN, SIG_IGN);          /* ignore SIGTTIN */
-    Signal(SIGTTOU, SIG_IGN);          /* ignore SIGTTOU */
-
-
-    /* This one provides a clean way to kill the shell */
-    Signal(SIGQUIT, sigquit_handler); 
-
-    /* Initialize the job list */
-    initjobs(jobs);
-
-    /* Execute the shell's read/eval loop */
-    while (1) {
-
 	/* Read command line */
 	if (emit_prompt) {
 	    printf("%s", prompt);
@@ -93,17 +72,7 @@
     exit(0); /* control never reaches here */
 }
 
-/* 
- * eval - Evaluate the command line that the user has just typed in
- * 
- * If the user has requested a built-in command (quit, jobs, bg or fg)
- * then execute it immediately. Otherwise, fork a child process and
- * run the job in the context of the child. If the job is running in
- * the foreground, wait for it to terminate and then return.  Note:
- * each child process must have a unique process group ID so that our
- * background children don't receive SIGINT (SIGTSTP) from the kernel
- * when we type ctrl-c (ctrl-z) at the keyboard.  
-*/
+
 void eval(char *cmdline) 
 { 
 
@@ -152,6 +121,79 @@ void eval(char *cmdline)
     return;
     }
 }
+				
+int parseline(const char *cmdline, char **argv) 
+{
+    static char array[MAXLINE]; /* holds local copy of command line */
+    char *buf = array;          /* ptr that traverses command line */
+    char *delim;                /* points to first space delimiter */
+    int argc;                   /* number of args */
+    int bg;                     /* background job? */
+
+    strcpy(buf, cmdline);
+    buf[strlen(buf)-1] = ' ';  /* replace trailing '\n' with space */
+    while (*buf && (*buf == ' ')) /* ignore leading spaces */
+	buf++;
+
+    /* Build the argv list */
+    argc = 0;
+    if (*buf == '\'') {
+	buf++;
+	delim = strchr(buf, '\'');
+    }
+    else {
+	delim = strchr(buf, ' ');
+    }
+
+    while (delim) {
+	argv[argc++] = buf;
+	*delim = '\0';
+	buf = delim + 1;
+	while (*buf && (*buf == ' ')) /* ignore spaces */
+	       buf++;
+
+	if (*buf == '\'') {
+	    buf++;
+	    delim = strchr(buf, '\'');
+	}
+	else {
+	    delim = strchr(buf, ' ');
+	}
+    }
+    argv[argc] = NULL;
+    
+    if (argc == 0)  /* ignore blank line */
+	return 1;
+
+    /* should the job run in the background? */
+    if ((bg = (*argv[argc-1] == '&')) != 0) {
+	argv[--argc] = NULL;
+    }
+    return bg;
+}
+
+/* 
+ * builtin_cmd - If the user has typed a built-in command then execute
+ *    it immediately.  
+ */
+int builtin_cmd(char **argv) 
+{
+    if (strcmp(argv[0], "quit") == 0) { // from class
+        exit(0);
+    }
+    if (strcmp(argv[0], "&") == 0) { // from csapp3e-ch08
+        return 1;
+    }
+    if (strcmp(argv[0], "jobs") == 0) { // from brain
+        listjobs(jobs);
+        return 1;
+    }
+    if ((strcmp(argv[0], "fg") == 0) || (strcmp(argv[0], "bg") == 0)) { // also brain
+        do_bgfg(argv);
+        return 1;
+    }
+    return 0;     /* not a builtin command */
+}
 
 void do_redirect(char **argv)
 {
@@ -178,55 +220,6 @@ void do_redirect(char **argv)
                         argv[i]=NULL;
                 }
         }
-}
-
-                             void eval(char *cmdline) 
-{ 
-
-    char *argv[MAXLINE]; // array of Strings (all command line arguments)
-    int bg; // is background job?
-    pid_t pid; // store pid of child process
-
-    sigset_t mask; // added: make a 'sigset_t' to store what signals we want to later block (SIGCHLD)
-    sigemptyset(&mask); // added: create an empty signal set then
-    sigaddset(&mask, SIGCHLD); // add SIGCHLD to set
-
-    bg = parseline(cmdline, argv); // parse the command line, check if line ends with '&'
-    if (argv[0] == NULL) { // if command line is empty
-        return;
-    }
-
-    // CMDLINE EXECUTION
-    if (!builtin_cmd(argv)) { // if not a built in command
-        sigprocmask(SIG_BLOCK, &mask, NULL); // added: block signals in set (SIGCHLD)
-
-        // CHILD PROCESS
-        if ((pid = fork()) == 0) { // added: fork; only child continues through if statement
-            setpgid(0,0); // added: set process group id
-            sigprocmask(SIG_UNBLOCK, &mask, NULL); // added: unblock signals in set (SIGCHLD)
-            do_redirect(argv); // added: redirect file input/output
-            if (execve(argv[0], argv, environ) < 0) { // replace current process with argv[0]
-                // if execve fails:
-                printf("%s: Command not found\n", argv[0]);
-                exit(0);
-            }
-        }
-
-        // PARENT PROCESS
-        else if (pid != 0) {  // changed: was an if, now is else if // only for parent
-            addjob(jobs, pid, bg ? BG : FG, cmdline); // added: create an UNDEF job // Simon showed me how to make a conditional which yeah we kind of learned in datalab but do you know how much has happened since datalab? Tesla stock has fallen at least 20% since then
-            if (!bg) { // removed 8.23's original behavior for this if statement
-                sigprocmask(SIG_UNBLOCK, &mask, NULL); // added: unblock signals in set (SIGCHLD)
-                waitfg(pid); // added: wait for FG process to terminate or stop
-            }
-            else { // added: case for BG jobs
-                printf("[%d] (%d) %s\n", getjobpid(jobs, pid)->jid, pid, cmdline); // added: print BG job
-                sigprocmask(SIG_UNBLOCK, &mask, NULL); // added: unblock signals in set (SIGCHLD)
-            }
-        }
-
-    return;
-    }
 }
 </code></pre>
 </body>
