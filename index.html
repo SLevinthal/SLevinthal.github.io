@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <link href="https://cdn.jsdelivr.net/npm/prismjs/themes/prism-tomorrow.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/prismjs/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs/components/prism-c.min.js"></script>
   <title>Sam Levinthal | Portfolio</title>
   <meta charset="UTF-8">
   <style>
@@ -16,5 +19,215 @@
   <img src="images/websiteSS1.png" alt="Unity Project Screenshot">
   <img src="images/websiteSS2.png" alt="Unity Project Screenshot">
   <p>An exploration and dialog based game for which I coded the full interactive dialog system in C#. The dialog system includes the following features: interacted NPC turning to face player, locking camera on NPC, free mouse movement during dialog, branching dialog options, and unlockable dialog options based on previous dialog choices.</p>
+
+  <h3>C Project: Kernel Shell</h3>
+  <p>Some snippets of code from a Kernel Shell made for my class Intro to Computer Systems and Networking</p>
+  <pre><code class="language-c">
+  
+  int main(int argc, char **argv) 
+{
+    char c;
+    char cmdline[MAXLINE];
+    int emit_prompt = 1; /* emit prompt (default) */
+
+    /* Redirect stderr to stdout (so that driver will get all output
+     * on the pipe connected to stdout) */
+    dup2(1, 2);
+
+    /* Parse the command line */
+    while ((c = getopt(argc, argv, "hvp")) != EOF) {
+        switch (c) {
+        case 'h':             /* print help message */
+            usage();
+	    break;
+        case 'v':             /* emit additional diagnostic info */
+            verbose = 1;
+	    break;
+        case 'p':             /* don't print a prompt */
+            emit_prompt = 0;  /* handy for automatic testing */
+	    break;
+	default:
+            usage();
+	}
+    }
+
+    /* Install the signal handlers */
+
+    /* These are the ones you will need to implement */
+    Signal(SIGINT,  sigint_handler);   /* ctrl-c */
+    Signal(SIGTSTP, sigtstp_handler);  /* ctrl-z */
+    Signal(SIGCHLD, sigchld_handler);  /* Terminated or stopped child */
+
+    /* Ignoring these signals simplifies reading from stdin/stdout */
+    Signal(SIGTTIN, SIG_IGN);          /* ignore SIGTTIN */
+    Signal(SIGTTOU, SIG_IGN);          /* ignore SIGTTOU */
+
+
+    /* This one provides a clean way to kill the shell */
+    Signal(SIGQUIT, sigquit_handler); 
+
+    /* Initialize the job list */
+    initjobs(jobs);
+
+    /* Execute the shell's read/eval loop */
+    while (1) {
+
+	/* Read command line */
+	if (emit_prompt) {
+	    printf("%s", prompt);
+	    fflush(stdout);
+	}
+	if ((fgets(cmdline, MAXLINE, stdin) == NULL) && ferror(stdin))
+	    app_error("fgets error");
+	if (feof(stdin)) { /* End of file (ctrl-d) */
+	    fflush(stdout);
+	    exit(0);
+	}
+
+	/* Evaluate the command line */
+	eval(cmdline);
+	fflush(stdout);
+	fflush(stdout);
+    } 
+
+    exit(0); /* control never reaches here */
+}
+
+/* 
+ * eval - Evaluate the command line that the user has just typed in
+ * 
+ * If the user has requested a built-in command (quit, jobs, bg or fg)
+ * then execute it immediately. Otherwise, fork a child process and
+ * run the job in the context of the child. If the job is running in
+ * the foreground, wait for it to terminate and then return.  Note:
+ * each child process must have a unique process group ID so that our
+ * background children don't receive SIGINT (SIGTSTP) from the kernel
+ * when we type ctrl-c (ctrl-z) at the keyboard.  
+*/
+void eval(char *cmdline) 
+{ 
+
+    char *argv[MAXLINE]; // array of Strings (all command line arguments)
+    int bg; // is background job?
+    pid_t pid; // store pid of child process
+
+    sigset_t mask; // added: make a 'sigset_t' to store what signals we want to later block (SIGCHLD)
+    sigemptyset(&mask); // added: create an empty signal set then
+    sigaddset(&mask, SIGCHLD); // add SIGCHLD to set
+
+    bg = parseline(cmdline, argv); // parse the command line, check if line ends with '&'
+    if (argv[0] == NULL) { // if command line is empty
+        return;
+    }
+
+    // CMDLINE EXECUTION
+    if (!builtin_cmd(argv)) { // if not a built in command
+        sigprocmask(SIG_BLOCK, &mask, NULL); // added: block signals in set (SIGCHLD)
+
+        // CHILD PROCESS
+        if ((pid = fork()) == 0) { // added: fork; only child continues through if statement
+            setpgid(0,0); // added: set process group id
+            sigprocmask(SIG_UNBLOCK, &mask, NULL); // added: unblock signals in set (SIGCHLD)
+            do_redirect(argv); // added: redirect file input/output
+            if (execve(argv[0], argv, environ) < 0) { // replace current process with argv[0]
+                // if execve fails:
+                printf("%s: Command not found\n", argv[0]);
+                exit(0);
+            }
+        }
+
+        // PARENT PROCESS
+        else if (pid != 0) {  // changed: was an if, now is else if // only for parent
+            addjob(jobs, pid, bg ? BG : FG, cmdline); // added: create an UNDEF job // Simon showed me how to make a conditional which yeah we kind of learned in datalab but do you know how much has happened since datalab? Tesla stock has fallen at least 20% since then
+            if (!bg) { // removed 8.23's original behavior for this if statement
+                sigprocmask(SIG_UNBLOCK, &mask, NULL); // added: unblock signals in set (SIGCHLD)
+                waitfg(pid); // added: wait for FG process to terminate or stop
+            }
+            else { // added: case for BG jobs
+                printf("[%d] (%d) %s\n", getjobpid(jobs, pid)->jid, pid, cmdline); // added: print BG job
+                sigprocmask(SIG_UNBLOCK, &mask, NULL); // added: unblock signals in set (SIGCHLD)
+            }
+        }
+
+    return;
+    }
+}
+
+void do_redirect(char **argv)
+{
+        int i;
+
+        for(i=0; argv[i]; i++)
+        {
+                if (!strcmp(argv[i],"<")) {
+                        /* add code for input redirection below */
+                        int inp = open(argv[i + 1], O_RDONLY, 0); // open file for reading
+                        dup2(inp, STDIN_FILENO); // duplicate info from file
+                        close(inp); // close file
+                        /* the line below cuts argv short. This
+                           removes the < and whatever follows from argv */
+                        argv[i]=NULL;
+                }
+                else if (!strcmp(argv[i],">")) {
+                        /* add code for output redirection here */
+                        int out = open(argv[i + 1], O_WRONLY | O_CREAT | O_TRUNC, 0); // open file for writing
+                        dup2(out, STDOUT_FILENO); // duplicate info to file
+                        close(out); // close file
+                        /* the line below cuts argv short. This
+                           removes the > and whatever follows from argv */
+                        argv[i]=NULL;
+                }
+        }
+}
+
+                             void eval(char *cmdline) 
+{ 
+
+    char *argv[MAXLINE]; // array of Strings (all command line arguments)
+    int bg; // is background job?
+    pid_t pid; // store pid of child process
+
+    sigset_t mask; // added: make a 'sigset_t' to store what signals we want to later block (SIGCHLD)
+    sigemptyset(&mask); // added: create an empty signal set then
+    sigaddset(&mask, SIGCHLD); // add SIGCHLD to set
+
+    bg = parseline(cmdline, argv); // parse the command line, check if line ends with '&'
+    if (argv[0] == NULL) { // if command line is empty
+        return;
+    }
+
+    // CMDLINE EXECUTION
+    if (!builtin_cmd(argv)) { // if not a built in command
+        sigprocmask(SIG_BLOCK, &mask, NULL); // added: block signals in set (SIGCHLD)
+
+        // CHILD PROCESS
+        if ((pid = fork()) == 0) { // added: fork; only child continues through if statement
+            setpgid(0,0); // added: set process group id
+            sigprocmask(SIG_UNBLOCK, &mask, NULL); // added: unblock signals in set (SIGCHLD)
+            do_redirect(argv); // added: redirect file input/output
+            if (execve(argv[0], argv, environ) < 0) { // replace current process with argv[0]
+                // if execve fails:
+                printf("%s: Command not found\n", argv[0]);
+                exit(0);
+            }
+        }
+
+        // PARENT PROCESS
+        else if (pid != 0) {  // changed: was an if, now is else if // only for parent
+            addjob(jobs, pid, bg ? BG : FG, cmdline); // added: create an UNDEF job // Simon showed me how to make a conditional which yeah we kind of learned in datalab but do you know how much has happened since datalab? Tesla stock has fallen at least 20% since then
+            if (!bg) { // removed 8.23's original behavior for this if statement
+                sigprocmask(SIG_UNBLOCK, &mask, NULL); // added: unblock signals in set (SIGCHLD)
+                waitfg(pid); // added: wait for FG process to terminate or stop
+            }
+            else { // added: case for BG jobs
+                printf("[%d] (%d) %s\n", getjobpid(jobs, pid)->jid, pid, cmdline); // added: print BG job
+                sigprocmask(SIG_UNBLOCK, &mask, NULL); // added: unblock signals in set (SIGCHLD)
+            }
+        }
+
+    return;
+    }
+}
+</code></pre>
 </body>
 </html>
