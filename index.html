@@ -19,7 +19,76 @@
   <img src="images/websiteSS1.png" alt="Unity Project Screenshot">
   <img src="images/websiteSS2.png" alt="Unity Project Screenshot">
   <p>An exploration and dialog based game for which I coded the full interactive dialog system in C#. The dialog system includes the following features: interacted NPC turning to face player, locking camera on NPC, free mouse movement during dialog, branching dialog options, and unlockable dialog options based on previous dialog choices.</p>
+  <p>Some snippets of code from the Dialog Engine</p>
+	<pre><code class="language-c#">
+	public class DialogueTrigger : MonoBehaviour {
+    private bool isPlayerInRange = false;
+    public DialogueLoader dialogueLoader;
 
+
+    public void OnEnable() {
+        GameObject player = GameObject.FindWithTag("Player");
+    }
+
+    void Update() {
+        if (Keyboard.current.eKey.wasPressedThisFrame) {
+            OnInteract(new InputAction.CallbackContext());
+        }
+    }
+
+    public void OnInteract(InputAction.CallbackContext context) {
+        if (isPlayerInRange && !DialogueManager.Instance.IsDialogueActive) {
+            StartCoroutine(SmoothLookAt(GameObject.FindWithTag("Player").transform, 0.3f));
+            dialogueLoader.StartDialogue(this.transform);
+        }
+    }
+
+    public void OnTriggerEnter(Collider collider) {
+        if (collider.gameObject.tag == "Player") {
+            isPlayerInRange = true;
+            Debug.Log("Player entered trigger zone");
+        }
+    }
+
+    public void OnTriggerExit(Collider collider) {
+        if (collider.gameObject.tag == "Player") {
+            isPlayerInRange = false;
+            Debug.Log("Player left trigger zone");
+        }
+    }
+
+    private IEnumerator SmoothLookAt(Transform target, float duration) { // hope u like quaternions lol
+        float time = 0f;
+
+        Quaternion startRotation = this.transform.rotation;
+        Quaternion targetRotation = startRotation;
+
+        while (time < duration) {
+            if (target != null) {
+                Vector3 direction = (target.position - this.transform.position);
+                direction.y = 0f;
+                if (direction != Vector3.zero) {
+                    targetRotation = Quaternion.LookRotation(direction.normalized);
+                }
+            }
+
+            this.transform.rotation = Quaternion.Slerp(startRotation, targetRotation, time / duration);
+            time += Time.deltaTime;
+            yield return null;
+        }
+
+        if (target != null) {
+            Vector3 finalDirection = (target.position - this.transform.position);
+            finalDirection.y = 0f;
+            if (finalDirection != Vector3.zero) {
+                this.transform.rotation = Quaternion.LookRotation(finalDirection.normalized);
+            }
+        }
+    }
+}
+
+	</code></pre>
+	
   <h3>C Project: Kernel Shell</h3>
   <p>Some snippets of code from a Kernel Shell made for my class Intro to Computer Systems and Networking</p>
   <pre><code class="language-c">
@@ -80,8 +149,8 @@ void eval(char *cmdline)
     int bg; // is background job?
     pid_t pid; // store pid of child process
 
-    sigset_t mask; // added: make a 'sigset_t' to store what signals we want to later block (SIGCHLD)
-    sigemptyset(&mask); // added: create an empty signal set then
+    sigset_t mask; // make a 'sigset_t' to store what signals we want to later block (SIGCHLD)
+    sigemptyset(&mask); // create an empty signal set
     sigaddset(&mask, SIGCHLD); // add SIGCHLD to set
 
     bg = parseline(cmdline, argv); // parse the command line, check if line ends with '&'
@@ -91,13 +160,13 @@ void eval(char *cmdline)
 
     // CMDLINE EXECUTION
     if (!builtin_cmd(argv)) { // if not a built in command
-        sigprocmask(SIG_BLOCK, &mask, NULL); // added: block signals in set (SIGCHLD)
+        sigprocmask(SIG_BLOCK, &mask, NULL); // block signals in set (SIGCHLD)
 
         // CHILD PROCESS
-        if ((pid = fork()) == 0) { // added: fork; only child continues through if statement
-            setpgid(0,0); // added: set process group id
-            sigprocmask(SIG_UNBLOCK, &mask, NULL); // added: unblock signals in set (SIGCHLD)
-            do_redirect(argv); // added: redirect file input/output
+        if ((pid = fork()) == 0) { // fork; only child continues through if statement
+            setpgid(0,0); // set process group id
+            sigprocmask(SIG_UNBLOCK, &mask, NULL); // unblock signals in set (SIGCHLD)
+            do_redirect(argv); // redirect file input/output
             if (execve(argv[0], argv, environ) < 0) { // replace current process with argv[0]
                 // if execve fails:
                 printf("%s: Command not found\n", argv[0]);
@@ -106,15 +175,15 @@ void eval(char *cmdline)
         }
 
         // PARENT PROCESS
-        else if (pid != 0) {  // changed: was an if, now is else if // only for parent
-            addjob(jobs, pid, bg ? BG : FG, cmdline); // added: create an UNDEF job // Simon showed me how to make a conditional which yeah we kind of learned in datalab but do you know how much has happened since datalab? Tesla stock has fallen at least 20% since then
-            if (!bg) { // removed 8.23's original behavior for this if statement
-                sigprocmask(SIG_UNBLOCK, &mask, NULL); // added: unblock signals in set (SIGCHLD)
-                waitfg(pid); // added: wait for FG process to terminate or stop
+        else if (pid != 0) { 
+            addjob(jobs, pid, bg ? BG : FG, cmdline); // create an UNDEF job
+            if (!bg) { 
+                sigprocmask(SIG_UNBLOCK, &mask, NULL); // unblock signals in set (SIGCHLD)
+                waitfg(pid); // wait for FG process to terminate or stop
             }
-            else { // added: case for BG jobs
-                printf("[%d] (%d) %s\n", getjobpid(jobs, pid)->jid, pid, cmdline); // added: print BG job
-                sigprocmask(SIG_UNBLOCK, &mask, NULL); // added: unblock signals in set (SIGCHLD)
+            else { // case for BG jobs
+                printf("[%d] (%d) %s\n", getjobpid(jobs, pid)->jid, pid, cmdline); // print BG job
+                sigprocmask(SIG_UNBLOCK, &mask, NULL); // unblock signals in set (SIGCHLD)
             }
         }
 
@@ -178,17 +247,17 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv) 
 {
-    if (strcmp(argv[0], "quit") == 0) { // from class
+    if (strcmp(argv[0], "quit") == 0) { // quit command
         exit(0);
     }
-    if (strcmp(argv[0], "&") == 0) { // from csapp3e-ch08
+    if (strcmp(argv[0], "&") == 0) { 
         return 1;
     }
-    if (strcmp(argv[0], "jobs") == 0) { // from brain
+    if (strcmp(argv[0], "jobs") == 0) { // jobs command
         listjobs(jobs);
         return 1;
     }
-    if ((strcmp(argv[0], "fg") == 0) || (strcmp(argv[0], "bg") == 0)) { // also brain
+    if ((strcmp(argv[0], "fg") == 0) || (strcmp(argv[0], "bg") == 0)) {
         do_bgfg(argv);
         return 1;
     }
