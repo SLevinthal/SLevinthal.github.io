@@ -15,15 +15,34 @@
   <h1>Sam Levinthal</h1>
   <h2>Unity & C Projects</h2>
 
-  <h3>Unity Project: Western Dialog Game</h3>
+  <h3>Unity Project: Western Dialogue Game</h3>
   <img src="images/websiteSS1.png" alt="Unity Project Screenshot">
   <img src="images/websiteSS2.png" alt="Unity Project Screenshot">
-  <p>An exploration and dialog based game for which I coded the full interactive dialog system in C#. The dialog system includes the following features: interacted NPC turning to face player, locking camera on NPC, free mouse movement during dialog, branching dialog options, and unlockable dialog options based on previous dialog choices.</p>
-  <p>Some snippets of code from the Dialog Engine</p>
-	<pre><code class="language-c#">
-	public class DialogueTrigger : MonoBehaviour {
+  <p>An exploration and dialog based game for which I coded the full interactive dialog system in C#. The dialogue system includes the following features: interacted NPC turning to face player, locking camera on NPC, free mouse movement during dialog, branching dialog options, and unlockable dialog options based on previous dialog choices.</p>
+  <p>Some snippets of code from the Dialogue Engine</p>
+<pre><code class="language-csharp">
+
+public class DialogueNode { 
+    public int id; // node id
+    public string speakerName; // name of speaker
+    public string dialogueText; // text to be shown
+    public DialogueChoice[] choices; // choices to be shown
+    public string condition; // conditions for node to be shown
+    public string effect; // effects of reaching node
+}
+
+[Serializable]
+public class DialogueChoice {
+    public string choiceText; // text for choice
+    public int nextNodeID; // id of node that follows the choice
+    public string condition; // conditions of choice
+    public string effect; // effects of choice
+}
+
+	
+public class DialogueTrigger : MonoBehaviour {
     private bool isPlayerInRange = false;
-    public DialogueLoader dialogueLoader;
+    public DialogueLoader dialogueLoader; // load dialogue
 
 
     public void OnEnable() {
@@ -31,57 +50,57 @@
     }
 
     void Update() {
-        if (Keyboard.current.eKey.wasPressedThisFrame) {
-            OnInteract(new InputAction.CallbackContext());
+        if (Keyboard.current.eKey.wasPressedThisFrame) { // use e key as interact button
+            OnInteract(new InputAction.CallbackContext()); 
         }
     }
 
     public void OnInteract(InputAction.CallbackContext context) {
         if (isPlayerInRange && !DialogueManager.Instance.IsDialogueActive) {
-            StartCoroutine(SmoothLookAt(GameObject.FindWithTag("Player").transform, 0.3f));
-            dialogueLoader.StartDialogue(this.transform);
+            StartCoroutine(SmoothLookAt(GameObject.FindWithTag("Player").transform, 0.3f)); // npc turns to face player
+            dialogueLoader.StartDialogue(this.transform); // start dialogue
         }
     }
 
     public void OnTriggerEnter(Collider collider) {
-        if (collider.gameObject.tag == "Player") {
+        if (collider.gameObject.tag == "Player") { // only allow dialogue to start if player is close enough
             isPlayerInRange = true;
             Debug.Log("Player entered trigger zone");
         }
     }
 
     public void OnTriggerExit(Collider collider) {
-        if (collider.gameObject.tag == "Player") {
+        if (collider.gameObject.tag == "Player") { // only allow dialogue to start if player is close enough
             isPlayerInRange = false;
             Debug.Log("Player left trigger zone");
         }
     }
 
-    private IEnumerator SmoothLookAt(Transform target, float duration) { // hope u like quaternions lol
+    private IEnumerator SmoothLookAt(Transform target, float duration) { // hope you like quaternions
         float time = 0f;
 
         Quaternion startRotation = this.transform.rotation;
-        Quaternion targetRotation = startRotation;
+        Quaternion targetRotation = startRotation; // set target rotation to initial rotation
 
         while (time < duration) {
             if (target != null) {
-                Vector3 direction = (target.position - this.transform.position);
+                Vector3 direction = (target.position - this.transform.position); // use player position and npc current position to determine direction
                 direction.y = 0f;
                 if (direction != Vector3.zero) {
-                    targetRotation = Quaternion.LookRotation(direction.normalized);
+                    targetRotation = Quaternion.LookRotation(direction.normalized); // set target rotation to look rotation
                 }
             }
 
-            this.transform.rotation = Quaternion.Slerp(startRotation, targetRotation, time / duration);
+            this.transform.rotation = Quaternion.Slerp(startRotation, targetRotation, time / duration); // determine rotation speed based on time / duration
             time += Time.deltaTime;
             yield return null;
         }
 
-        if (target != null) {
-            Vector3 finalDirection = (target.position - this.transform.position);
+        if (target != null) { // once time >= duration
+            Vector3 finalDirection = (target.position - this.transform.position); // determine final look direction
             finalDirection.y = 0f;
             if (finalDirection != Vector3.zero) {
-                this.transform.rotation = Quaternion.LookRotation(finalDirection.normalized);
+                this.transform.rotation = Quaternion.LookRotation(finalDirection.normalized); // npc finishes rotation
             }
         }
     }
